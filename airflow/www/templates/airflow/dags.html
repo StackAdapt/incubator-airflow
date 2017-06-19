@@ -325,7 +325,7 @@
             states = json[dag_id];
             g = d3.select('svg#task-run-' + dag_id)
               .attr('height', diameter + (stroke_width_hover * 2))
-              .attr('width', '180px')
+              .attr('width', '210px')
               .selectAll("g")
               .data(states)
               .enter()
