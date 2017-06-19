@@ -44,7 +44,7 @@ from tabulate import tabulate
 from airflow import executors, models, settings
 from airflow import configuration as conf
 from airflow.exceptions import AirflowException
-from airflow.models import DAG, DagRun
+from airflow.models import DAG, DagRun, TaskExclusion
 from airflow.settings import Stats
 from airflow.task_runner import get_task_runner
 from airflow.ti_deps.dep_context import DepContext, QUEUE_DEPS, RUN_DEPS
@@ -907,8 +907,15 @@ class SchedulerJob(BaseJob):
                 if ti.are_dependencies_met(
                         dep_context=DepContext(flag_upstream_failed=True),
                         session=session):
-                    self.logger.debug('Queuing task: {}'.format(ti))
-                    queue.append(ti.key)
+                    if TaskExclusion.should_exclude_task(
+                            dag_id=ti.dag_id,
+                            task_id=ti.task_id,
+                            execution_date=ti.execution_date):
+                        self.logger.debug('Excluding task: {}'.format(ti))
+                        ti.set_state(State.EXCLUDED, session)
+                    else:
+                        self.logger.debug('Queuing task: {}'.format(ti))
+                        queue.append(ti.key)
 
         session.close()
 
@@ -1881,7 +1888,7 @@ class BackfillJob(BaseJob):
 
                     # The task was already marked successful or skipped by a
                     # different Job. Don't rerun it.
-                    if ti.state == State.SUCCESS:
+                    if ti.state_for_dependents() == State.SUCCESS:
                         succeeded.add(key)
                         self.logger.debug("Task instance {} succeeded. "
                                           "Don't rerun.".format(ti))

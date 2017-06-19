@@ -39,7 +39,7 @@ def create_app(config=None, testing=False):
 
     csrf.init_app(app)
 
-    app.config['TESTING'] = testing
+
 
     airflow.load_login()
     airflow.login.login_manager.init_app(app)
