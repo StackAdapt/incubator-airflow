@@ -73,15 +73,10 @@ class TriggerRuleDep(BaseTIDep):
 
         successes, excluded, skipped, failed, upstream_failed, done = qry.first()
 
-        # Add excluded tasks into successful tasks as they are equivalent for
-        # dependency purposes. This is done in this way, not using the
-        # state_for_dependents function, due to the constraints of SQLAlchemy
-        # queries.
-        successes = successes + excluded
-
         for dep_status in self._evaluate_trigger_rule(
                 ti=ti,
                 successes=successes,
+                excluded=excluded,
                 skipped=skipped,
                 failed=failed,
                 upstream_failed=upstream_failed,
@@ -95,6 +90,7 @@ class TriggerRuleDep(BaseTIDep):
             self,
             ti,
             successes,
+            excluded,
             skipped,
             failed,
             upstream_failed,
@@ -133,9 +129,15 @@ class TriggerRuleDep(BaseTIDep):
         tr = task.trigger_rule
         upstream_done = done >= upstream
         upstream_tasks_state = {
-            "successes": successes, "skipped": skipped, "failed": failed,
+            "successes": successes, "skipped": skipped, "failed": failed, "excluded": excluded,
             "upstream_failed": upstream_failed, "done": done
         }
+
+        # If a task is excluded, all its downstream is also excluded.
+        if excluded > 0:
+            ti.set_state(State.EXCLUDED, session)
+
+
         # TODO(aoen): Ideally each individual trigger rules would be it's own class, but
         # this isn't very feasible at the moment since the database queries need to be
         # bundled together for efficiency.

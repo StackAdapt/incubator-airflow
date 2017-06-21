@@ -792,19 +792,6 @@ class TaskInstance(Base):
         """ Initialize the attributes that aren't stored in the DB. """
         self.test_mode = False  # can be changed when calling 'run'
 
-    def state_for_dependents(self):
-        """
-        Helper function used to wire in the EXCLUDED state. For identifying
-        whether task dependencies are met, the EXCLUDED state should be treated
-        as SUCCESS. This function allows us to encompass this logic in one
-        place.
-        :return: the effective state of the task instance.
-        """
-        if self.state == State.EXCLUDED:
-            return State.SUCCESS
-        else:
-            return self.state
-
     def command(
             self,
             mark_success=False,
@@ -1304,7 +1291,7 @@ class TaskInstance(Base):
         self.operator = task.__class__.__name__
 
         if not ignore_all_deps and not ignore_ti_state:
-            if self.state_for_dependents() == State.SUCCESS:
+            if self.state in [State.SUCCESS, State.EXCLUDED]:
                 Stats.incr('previously_succeeded', 1, 1)
 
         queue_dep_context = DepContext(
@@ -4246,13 +4233,14 @@ class DagRun(Base):
         # future: remove the check on adhoc tasks (=active_tasks)
         if len(tis) == len(dag.active_tasks):
             root_ids = [t.task_id for t in dag.roots]
-            roots = [t for t in tis if t.task_id in root_ids]
+            roots = [t for t in tis if t.task_id and t.state != State.EXCLUDED in root_ids]
 
             # if all roots finished and at least on failed, the run failed
             if (not unfinished_tasks and
                     any(r.state in (State.FAILED, State.UPSTREAM_FAILED) for r in roots)):
                 logging.info('Marking run {} failed'.format(self))
                 self.state = State.FAILED
+
 
             # if all roots succeeded and no unfinished tasks, the run succeeded
             elif not unfinished_tasks and all(r.state in (State.SUCCESS, State.SKIPPED)
