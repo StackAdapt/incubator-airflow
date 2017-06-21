@@ -910,7 +910,7 @@ class TaskInstance(Base):
         :param local: Whether to run the task locally
         :type local: bool
         :param pickle_id: If the DAG was serialized to the DB, the ID
-        associated with the pickled DAG
+            associated with the pickled DAG
         :type pickle_id: unicode
         :param file_path: path to the file containing the DAG definition
         :param raw: raw mode (needs more details)
@@ -1239,6 +1239,7 @@ class TaskInstance(Base):
     def get_dagrun(self, session):
         """
         Returns the DagRun for this TaskInstance
+
         :param session:
         :return: DagRun
         """
@@ -1800,6 +1801,47 @@ class Log(Base):
                 self.execution_date = kwargs['execution_date']
 
         self.owner = owner or task_owner
+
+
+class SkipMixin(object):
+    def skip(self, dag_run, execution_date, tasks):
+        """
+        Sets tasks instances to skipped from the same dag run.
+        :param dag_run: the DagRun for which to set the tasks to skipped
+        :param execution_date: execution_date
+        :param tasks: tasks to skip (not task_ids)
+        """
+        if not tasks:
+            return
+
+        task_ids = [d.task_id for d in tasks]
+        now = datetime.now()
+        session = settings.Session()
+
+        if dag_run:
+            session.query(TaskInstance).filter(
+                TaskInstance.dag_id == dag_run.dag_id,
+                TaskInstance.execution_date == dag_run.execution_date,
+                TaskInstance.task_id.in_(task_ids)
+            ).update({TaskInstance.state : State.SKIPPED,
+                      TaskInstance.start_date: now,
+                      TaskInstance.end_date: now},
+                     synchronize_session=False)
+            session.commit()
+        else:
+            assert execution_date is not None, "Execution date is None and no dag run"
+
+            logging.warning("No DAG RUN present this should not happen")
+            # this is defensive against dag runs that are not complete
+            for task in tasks:
+                ti = TaskInstance(task, execution_date=execution_date)
+                ti.state = State.SKIPPED
+                ti.start_date = now
+                ti.end_date = now
+                session.merge(ti)
+
+            session.commit()
+        session.close()
 
 
 @functools.total_ordering
@@ -2685,7 +2727,7 @@ class DAG(BaseDag, LoggingMixin):
     :param orientation: Specify DAG orientation in graph view (LR, TB, RL, BT)
     :type orientation: string
     :param catchup: Perform scheduler catchup (or only run latest)? Defaults to True
-    "type catchup: bool"
+    :type catchup: bool
     """
 
     def __init__(
@@ -2990,6 +3032,7 @@ class DAG(BaseDag, LoggingMixin):
         """
         Returns the dag run for a given execution date if it exists, otherwise
         none.
+
         :param execution_date: The execution date of the DagRun to find.
         :param session:
         :return: The DagRun if found, otherwise None.
@@ -3094,6 +3137,7 @@ class DAG(BaseDag, LoggingMixin):
 
         Heavily inspired by:
         http://blog.jupo.org/2012/04/06/topological-sorting-acyclic-directed-graphs/
+
         :return: list of tasks in topological order
         """
 
@@ -3480,7 +3524,6 @@ class DAG(BaseDag, LoggingMixin):
 
         :param dag: the DAG object to save to the DB
         :type dag: DAG
-        :own
         :param sync_time: The time that the DAG should be marked as sync'ed
         :type sync_time: datetime
         :return: None
@@ -3529,7 +3572,7 @@ class DAG(BaseDag, LoggingMixin):
         the expiration date. These DAGs were likely deleted.
 
         :param expiration_date: set inactive DAGs that were touched before this
-        time
+            time
         :type expiration_date: datetime
         :return: None
         """
@@ -4353,6 +4396,14 @@ class Pool(Base):
 
     def __repr__(self):
         return self.pool
+
+    def to_json(self):
+        return {
+            'id': self.id,
+            'pool': self.pool,
+            'slots': self.slots,
+            'description': self.description,
+        }
 
     @provide_session
     def used_slots(self, session):
