@@ -1231,7 +1231,7 @@ class Airflow(BaseView):
         origin = request.args.get('origin')
         execution_date = request.args.get('execution_date')
         clear = request.args.get('clear') == "true"
-        exclusion_type = TaskExclusionType.SINGLE_DATE
+        exclusion_type = TaskExclusionType.INDEFINITE
 
         # Convert execution_date to Datetime object.
         execution_date = dateutil.parser.parse(execution_date)
