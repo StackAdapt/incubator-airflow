@@ -41,7 +41,7 @@ from flask_admin.contrib.sqla import ModelView
 from flask_admin.actions import action
 from flask_admin.babel import lazy_gettext
 from flask_admin.tools import iterdecode
-from flask_login import flash, current_user as flask_user
+from flask_login import flash, current_user as flask_user, AnonymousUserMixin
 from flask._compat import PY2
 
 from jinja2.sandbox import ImmutableSandboxedEnvironment
@@ -1236,10 +1236,10 @@ class Airflow(BaseView):
         # Convert execution_date to Datetime object.
         execution_date = dateutil.parser.parse(execution_date)
 
-        # Get current user
-        username = flask_user.username
-        if not username:
+        if current_user.is_anonymous() or flask_user.username is None:
             username = 'Username not found.'
+        else:
+            username = flask_user.username
 
         if clear:
             TaskExclusion.remove(dag_id,
